@@ -192,7 +192,7 @@ def main():
         primary_reset_seconds = primary.get('resets_in_seconds', 0)
         primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary_reset_seconds)
 
-        reset_time_str = primary_reset_time.strftime('%Y-%m-%d %H:%M:%S')
+        reset_time_str = primary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
         outdated_str = " [OUTDATED]" if primary_outdated else ""
         print(f"5h limit: used {primary_percent}%, reset: {reset_time_str}{outdated_str}")
 
@@ -202,7 +202,7 @@ def main():
         secondary_reset_seconds = secondary.get('resets_in_seconds', 0)
         secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary_reset_seconds)
 
-        reset_time_str = secondary_reset_time.strftime('%Y-%m-%d %H:%M:%S')
+        reset_time_str = secondary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
         outdated_str = " [OUTDATED]" if secondary_outdated else ""
         print(f"weekly limit: used {secondary_percent}%, reset: {reset_time_str}{outdated_str}")
 
