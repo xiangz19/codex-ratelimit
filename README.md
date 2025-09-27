@@ -8,6 +8,7 @@ While Claude Code's `/status` command provides token usage and rate limit inform
 
 1. **Requires Active Session**: You must send at least one message in a session before using `/status` to get rate limit info
 2. **Workflow Interruption**: The `/status` command breaks the natural flow of conversation from the user's perspective (although the command and output don't pollute the context)
+3. **Not Available in VS Code Extension**: The `/status` command is not available when using the Codex VS Code extension
 
 This utility provides a non-intrusive way to check your current token usage and rate limits by directly parsing the session files, without needing to start a new conversation or interrupt your workflow.
 
@@ -27,6 +28,12 @@ python ratelimit_checker.py
 
 # Use custom directory
 python ratelimit_checker.py --input-folder /path/to/sessions
+
+# Launch live TUI monitoring interface
+python ratelimit_checker.py --live
+
+# Live mode with custom refresh interval
+python ratelimit_checker.py --live --interval 5
 ```
 
 ## Sample Output
@@ -48,6 +55,7 @@ weekly limit: used 22.0%, reset: 2025-10-01 09:04:07
 - **Complete Analysis**: Shows total/last token usage and both rate limit statuses
 - **Time Awareness**: Calculates and validates reset times, marking outdated ones
 - **Robust Processing**: Handles missing files, empty directories, and corrupted JSON gracefully
+- **Live TUI Monitor**: Real-time monitoring interface with progress bars for usage and time limits
 
 ## Command Line Options
 
@@ -57,6 +65,44 @@ python ratelimit_checker.py [OPTIONS]
 Options:
   -h, --help                    Show help message
   -i, --input-folder PATH       Custom input folder path (default: ~/.codex/sessions)
+  --live                        Launch TUI live monitoring interface
+  --interval SECONDS            Refresh interval in seconds for live mode (default: 10)
+```
+
+## Live TUI Interface
+
+The `--live` option launches a real-time monitoring interface similar to `ccusage --live`, featuring:
+
+- **4 Progress Bars**:
+  - 🕱️ **5H TIME**: Time elapsed in 5-hour window
+  - 🔥 **5H USAGE**: Usage percentage in 5-hour limit
+  - 📅 **WEEK TIME**: Time elapsed in weekly window
+  - 📊 **WEEK USAGE**: Usage percentage in weekly limit
+- **Auto-refresh**: Updates data at specified interval (default: 10 seconds)
+- **Reset Times**: Shows when limits reset (marks outdated limits)
+- **Quit**: Press 'q' to exit
+
+```
+ ┌────────────────────────────────────────────────────────────────────┐
+ │  CLAUDE CODE - LIVE TOKEN USAGE MONITOR                           │
+ ├────────────────────────────────────────────────────────────────────┤
+ │                                                                    │
+ │ 🕱️ 5H TIME    [████████████████████████████████░░░░░░░░░]  68.2%    │
+ │    Reset: 20:26:38                                                 │
+ │                                                                    │
+ │ 🔥 5H USAGE   [██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  10.0%    │
+ │    Used: 10.0%                                                     │
+ │                                                                    │
+ │ 📅 WEEK TIME  [█████████████████████░░░░░░░░░░░░░░░░░░░]  43.9%    │
+ │    Reset: 10-01 17:04:21                                           │
+ │                                                                    │
+ │ 📊 WEEK USAGE [████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  25.0%    │
+ │    Used: 25.0%                                                     │
+ │                                                                    │
+ ├────────────────────────────────────────────────────────────────────┤
+ │ Last update: 2025-09-27 11:21:47                                  │
+ │ Refresh interval: 10s | Press 'q' to quit                         │
+ └────────────────────────────────────────────────────────────────────┘
 ```
 
 ## File Structure
