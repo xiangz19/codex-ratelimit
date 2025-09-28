@@ -8,9 +8,11 @@ While the CODEX CLI's `/status` command provides token usage and rate limit info
 
 1. **Requires Active Session**: You must send at least one message in a session before using `/status` to get rate limit info
 2. **Workflow Interruption**: The `/status` command breaks the natural flow of conversation from the user's perspective (although the command and output don't pollute the context)
-3. **Not Available in VS Code Extension**: The `/status` command is not available when using the CODEX VS Code extension
+3. **Requires Extra Clicks in VS Code Extension**: The VS Code extension does show the rate limit, but you need to click the mouse twice, so a live TUI might still be useful to some users.
 
 This utility provides a non-intrusive way to check your current token usage and rate limits by directly parsing the session files, without needing to start a new conversation or interrupt your workflow.
+
+This utility is inspired by [ccusage](https://github.com/ryoppippi/ccusage); at present ccusage only supports CODEX usage data and does not yet include rate limit information.
 
 ## Overview
 
@@ -78,7 +80,7 @@ weekly limit: used 22.0%, reset: 2025-10-01 09:04:07
 ## Features
 
 ### Key Capabilities
-- **Smart Discovery**: Searches backwards up to 30 days to find the most recent token usage data
+- **Smart Discovery**: Searches backwards up to 7 days to find the most recent token usage data
 - **Complete Analysis**: Shows total/last token usage and both rate limit statuses
 - **Time Awareness**: Calculates and validates reset times, marking outdated ones
 - **Robust Processing**: Handles missing files, empty directories, and corrupted JSON gracefully
@@ -188,7 +190,7 @@ The utility parses JSONL files where each line contains a JSON record. It specif
 ### No token_count events found
 - Verify the session directory path is correct
 - Check if session files exist in the expected date structure
-- Ensure files are not older than 30 days (extend search range if needed)
+- Ensure files are not older than 7 days (extend search range if needed)
 
 ### Incorrect timestamps
 - The utility uses the session file's timestamp, not current time
