@@ -34,6 +34,9 @@ python ratelimit_checker.py --live
 
 # Live mode with custom refresh interval
 python ratelimit_checker.py --live --interval 5
+
+# Live mode with custom warning threshold for color coding
+python ratelimit_checker.py --live --warning-threshold 80
 ```
 
 ## Sample Output
@@ -56,18 +59,20 @@ weekly limit: used 22.0%, reset: 2025-10-01 09:04:07
   ┌────────────────────────────────────────────────────────────────────────┐
   │                  CODEX RATELIMIT - LIVE USAGE MONITOR                  │
   ├────────────────────────────────────────────────────────────────────────┤
-  │ 5H SESSION   [██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  21.9%   │
-  │    Reset: 04:51:36                                                     │
-  │ 5H USAGE     [████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  28.0%   │
-  │    Used: 28.0%                                                         │
-  │ WEEK TIME    [█████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░]  47.6%   │
-  │    Reset: 10-01 17:04:14                                               │
-  │ WEEK USAGE   [███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  34.0%   │
-  │    Used: 34.0%                                                         │
+  │ 5H SESSION   [----------------------------------------------]    N/A   │
+  │    Reset: 09-28 04:51:36 [OUTDATED]                                    │
   ├────────────────────────────────────────────────────────────────────────┤
-  │ Last update: 2025-09-28 01:06:07                                       │
-  │ Refresh interval: 20s | Press 'q' to quit                              │
+  │ 5H USAGE     [----------------------------------------------]    N/A   │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ WEEKLY TIME  [█████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░]  47.6%   │
+  │    Reset: 10-01 17:04:14                                               │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ WEEKLY USAGE [███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  34.0%   │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ Last update: 2025-09-28 12:22:07                                       │
+  │ Refresh interval: 60s | Press 'q' to quit                              │
   └────────────────────────────────────────────────────────────────────────┘
+
 ```
 
 ## Features
@@ -89,6 +94,7 @@ Options:
   -i, --input-folder PATH       Custom input folder path (default: ~/.codex/sessions)
   --live                        Launch TUI live monitoring interface
   --interval SECONDS            Refresh interval in seconds for live mode (default: 10)
+  --warning-threshold PERCENT   Usage percentage threshold for warning color (default: 70)
 ```
 
 ## Live TUI Interface
@@ -97,11 +103,13 @@ The `--live` option launches a real-time monitoring interface similar to `ccusag
 
 - **4 Progress Bars**:
   - **5H TIME**: Time elapsed in 5-hour window
-  - **5H USAGE**: Usage percentage in 5-hour limit
-  - **WEEK TIME**: Time elapsed in weekly window
-  - **WEEK USAGE**: Usage percentage in weekly limit
+  - **5H USAGE**: Usage percentage in 5-hour limit (colored: green < threshold, red ≥ threshold)
+  - **WEEKLY TIME**: Time elapsed in weekly window
+  - **WEEKLY USAGE**: Usage percentage in weekly limit (colored: green < threshold, red ≥ threshold)
+- **Color Coding**: Usage bars are green when below warning threshold (default 70%), red when above
 - **Reset Times**: Shows when limits reset (marks outdated limits)
 - **Auto-refresh**: Updates data at specified interval (default: 10 seconds)
+- **Outdated Data**: Shows "N/A" with dash-filled bars for expired rate limit data
 
 
 ## File Structure
