@@ -334,6 +334,7 @@ def run_tui(base_path: Optional[Path], refresh_interval: int) -> None:
         curses.curs_set(0)  # Hide cursor
         stdscr.nodelay(True)  # Non-blocking input
         stdscr.timeout(100)  # 100ms timeout for getch()
+        curses.use_default_colors()  # Use terminal's default colors
 
         # Get terminal dimensions
         max_y, max_x = stdscr.getmaxyx()
