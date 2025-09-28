@@ -84,6 +84,9 @@ def find_latest_token_count_record(base_path: Optional[Path] = None) -> Optional
 
     Returns:
         Tuple of (file_path, record) for the latest token_count event, or None if not found
+
+    Note:
+        Searches backwards for up to 7 days from the current date.
     """
     if base_path is None:
         base_path = get_session_base_path()
@@ -93,8 +96,8 @@ def find_latest_token_count_record(base_path: Optional[Path] = None) -> Optional
     latest_timestamp = None
     latest_file = None
 
-    # Search backwards for up to 30 days
-    for days_back in range(30):
+    # Search backwards for up to 7 days
+    for days_back in range(7):
         search_date = current_date - timedelta(days=days_back)
         date_path = base_path / str(search_date.year) / f"{search_date.month:02d}" / f"{search_date.day:02d}"
 
@@ -123,6 +126,42 @@ def find_latest_token_count_record(base_path: Optional[Path] = None) -> Optional
     return None
 
 
+def validate_token_count_record(record: Dict[str, Any]) -> bool:
+    """
+    Validate that a token_count record has all required properties.
+
+    Args:
+        record: The record to validate
+
+    Returns:
+        True if the record has all required properties, False otherwise
+    """
+    try:
+        # Check basic structure
+        payload = record.get('payload')
+        if not payload or payload.get('type') != 'token_count':
+            return False
+
+        # Check info section exists
+        info = payload.get('info')
+        if not info:
+            return False
+
+        # Check required token usage fields exist
+        total_usage = info.get('total_token_usage')
+        last_usage = info.get('last_token_usage')
+        if not total_usage or not last_usage:
+            return False
+
+        # Check timestamp exists
+        if not record.get('timestamp'):
+            return False
+
+        return True
+    except Exception:
+        return False
+
+
 def parse_session_file(file_path: Path) -> Optional[Dict[str, Any]]:
     """
     Parse the session file and find the latest token_count event.
@@ -146,9 +185,9 @@ def parse_session_file(file_path: Path) -> Optional[Dict[str, Any]]:
                 try:
                     record = json.loads(line)
 
-                    # Check if this is a token_count event
+                    # Check if this is a valid token_count event with required properties
                     if (record.get('type') == 'event_msg' and
-                        record.get('payload', {}).get('type') == 'token_count'):
+                        validate_token_count_record(record)):
 
                         timestamp_str = record.get('timestamp')
                         if timestamp_str:
@@ -204,65 +243,80 @@ def get_rate_limit_data(base_path: Optional[Path] = None) -> Optional[Dict[str, 
         return None
 
     latest_file, record = result
-    payload = record['payload']
-    info = payload['info']
-    rate_limits = payload.get('rate_limits', {})
-    record_timestamp = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00'))
-    current_time_local = datetime.now().astimezone()
 
-    data = {
-        'file_path': latest_file,
-        'record_timestamp': record_timestamp,
-        'current_time': current_time_local,
-        'total_usage': info['total_token_usage'],
-        'last_usage': info['last_token_usage']
-    }
+    # Defensive validation - this should already be validated, but double-check
+    if not validate_token_count_record(record):
+        return None
+
+    try:
+        payload = record['payload']
+        info = payload['info']
+        rate_limits = payload.get('rate_limits', {})
+        record_timestamp = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00'))
+        current_time_local = datetime.now().astimezone()
+
+        data = {
+            'file_path': latest_file,
+            'record_timestamp': record_timestamp,
+            'current_time': current_time_local,
+            'total_usage': info['total_token_usage'],
+            'last_usage': info['last_token_usage']
+        }
+    except Exception as e:
+        print(f"Error processing rate limit data: {e}")
+        return None
 
     # Process primary (5h) rate limits
-    primary = rate_limits.get('primary', {})
-    if primary:
-        primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary.get('resets_in_seconds', 0))
-        window_seconds = primary.get('window_minutes', 299) * 60
-        resets_in_seconds = primary.get('resets_in_seconds', 0)
+    try:
+        primary = rate_limits.get('primary', {})
+        if primary:
+            primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary.get('resets_in_seconds', 0))
+            window_seconds = primary.get('window_minutes', 299) * 60
+            resets_in_seconds = primary.get('resets_in_seconds', 0)
 
-        if primary_outdated:
-            # If outdated, assume 100% time elapsed
-            time_percent = 100.0
-        else:
-            # elapsed_seconds = total_window - remaining_seconds
-            elapsed_seconds = window_seconds - resets_in_seconds
-            time_percent = (elapsed_seconds / window_seconds) * 100 if window_seconds > 0 else 0
+            if primary_outdated:
+                # If outdated, assume 100% time elapsed
+                time_percent = 100.0
+            else:
+                # elapsed_seconds = total_window - remaining_seconds
+                elapsed_seconds = window_seconds - resets_in_seconds
+                time_percent = (elapsed_seconds / window_seconds) * 100 if window_seconds > 0 else 0
 
-        data['primary'] = {
-            'used_percent': primary.get('used_percent', 0),
-            'time_percent': max(0, min(100, time_percent)),
-            'reset_time': primary_reset_time,
-            'outdated': primary_outdated,
-            'window_minutes': primary.get('window_minutes', 299)
-        }
+            data['primary'] = {
+                'used_percent': primary.get('used_percent', 0),
+                'time_percent': max(0, min(100, time_percent)),
+                'reset_time': primary_reset_time,
+                'outdated': primary_outdated,
+                'window_minutes': primary.get('window_minutes', 299)
+            }
+    except Exception as e:
+        print(f"Error processing primary rate limit data: {e}")
 
     # Process secondary (weekly) rate limits
-    secondary = rate_limits.get('secondary', {})
-    if secondary:
-        secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary.get('resets_in_seconds', 0))
-        window_seconds = secondary.get('window_minutes', 10079) * 60
-        resets_in_seconds = secondary.get('resets_in_seconds', 0)
+    try:
+        secondary = rate_limits.get('secondary', {})
+        if secondary:
+            secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary.get('resets_in_seconds', 0))
+            window_seconds = secondary.get('window_minutes', 10079) * 60
+            resets_in_seconds = secondary.get('resets_in_seconds', 0)
 
-        if secondary_outdated:
-            # If outdated, assume 100% time elapsed
-            time_percent = 100.0
-        else:
-            # elapsed_seconds = total_window - remaining_seconds
-            elapsed_seconds = window_seconds - resets_in_seconds
-            time_percent = (elapsed_seconds / window_seconds) * 100 if window_seconds > 0 else 0
+            if secondary_outdated:
+                # If outdated, assume 100% time elapsed
+                time_percent = 100.0
+            else:
+                # elapsed_seconds = total_window - remaining_seconds
+                elapsed_seconds = window_seconds - resets_in_seconds
+                time_percent = (elapsed_seconds / window_seconds) * 100 if window_seconds > 0 else 0
 
-        data['secondary'] = {
-            'used_percent': secondary.get('used_percent', 0),
-            'time_percent': max(0, min(100, time_percent)),
-            'reset_time': secondary_reset_time,
-            'outdated': secondary_outdated,
-            'window_minutes': secondary.get('window_minutes', 10079)
-        }
+            data['secondary'] = {
+                'used_percent': secondary.get('used_percent', 0),
+                'time_percent': max(0, min(100, time_percent)),
+                'reset_time': secondary_reset_time,
+                'outdated': secondary_outdated,
+                'window_minutes': secondary.get('window_minutes', 10079)
+            }
+    except Exception as e:
+        print(f"Error processing secondary rate limit data: {e}")
 
     return data
 
@@ -615,40 +669,58 @@ def main():
     latest_file, record = result
     print(f"Found latest token_count event in: {latest_file}")
 
-    # Extract data from the record
-    payload = record['payload']
-    info = payload['info']
-    rate_limits = payload.get('rate_limits', {})
+    # Validate record structure before processing
+    if not validate_token_count_record(record):
+        print("Error: Found token_count event has invalid or missing required properties.")
+        return
 
-    record_timestamp = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00'))
+    try:
+        # Extract data from the record
+        payload = record['payload']
+        info = payload['info']
+        rate_limits = payload.get('rate_limits', {})
+
+        record_timestamp = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00'))
+    except Exception as e:
+        print(f"Error processing token_count record: {e}")
+        return
 
     # Display token usage
-    total_usage = info['total_token_usage']
-    last_usage = info['last_token_usage']
+    try:
+        total_usage = info['total_token_usage']
+        last_usage = info['last_token_usage']
 
-    print(f"total: {format_token_usage(total_usage)}")
-    print(f"last:  {format_token_usage(last_usage)}")
+        print(f"total: {format_token_usage(total_usage)}")
+        print(f"last:  {format_token_usage(last_usage)}")
+    except Exception as e:
+        print(f"Error displaying token usage: {e}")
 
     # Display rate limits
-    primary = rate_limits.get('primary', {})
-    if primary:
-        primary_percent = primary.get('used_percent', 0)
-        primary_reset_seconds = primary.get('resets_in_seconds', 0)
-        primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary_reset_seconds)
+    try:
+        primary = rate_limits.get('primary', {})
+        if primary:
+            primary_percent = primary.get('used_percent', 0)
+            primary_reset_seconds = primary.get('resets_in_seconds', 0)
+            primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary_reset_seconds)
 
-        reset_time_str = primary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
-        outdated_str = " [OUTDATED]" if primary_outdated else ""
-        print(f"5h limit: used {primary_percent}%, reset: {reset_time_str}{outdated_str}")
+            reset_time_str = primary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
+            outdated_str = " [OUTDATED]" if primary_outdated else ""
+            print(f"5h limit: used {primary_percent}%, reset: {reset_time_str}{outdated_str}")
+    except Exception as e:
+        print(f"Error displaying primary rate limit: {e}")
 
-    secondary = rate_limits.get('secondary', {})
-    if secondary:
-        secondary_percent = secondary.get('used_percent', 0)
-        secondary_reset_seconds = secondary.get('resets_in_seconds', 0)
-        secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary_reset_seconds)
+    try:
+        secondary = rate_limits.get('secondary', {})
+        if secondary:
+            secondary_percent = secondary.get('used_percent', 0)
+            secondary_reset_seconds = secondary.get('resets_in_seconds', 0)
+            secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary_reset_seconds)
 
-        reset_time_str = secondary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
-        outdated_str = " [OUTDATED]" if secondary_outdated else ""
-        print(f"weekly limit: used {secondary_percent}%, reset: {reset_time_str}{outdated_str}")
+            reset_time_str = secondary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
+            outdated_str = " [OUTDATED]" if secondary_outdated else ""
+            print(f"weekly limit: used {secondary_percent}%, reset: {reset_time_str}{outdated_str}")
+    except Exception as e:
+        print(f"Error displaying secondary rate limit: {e}")
 
 
 if __name__ == "__main__":
