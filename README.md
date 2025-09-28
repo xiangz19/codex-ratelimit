@@ -1,20 +1,20 @@
 # codex-ratelimit
 
-A lightweight utility to check your current Claude Code token usage and rate limits without interrupting your workflow.
+A lightweight utility to check the token usage and rate limits of your local CODEX installation (CLI or IDE extensions) without interrupting your workflow.
 
 ## Background
 
-While Claude Code's `/status` command provides token usage and rate limit information, it has some limitations:
+While the CODEX CLI's `/status` command provides token usage and rate limit information, it has some limitations:
 
 1. **Requires Active Session**: You must send at least one message in a session before using `/status` to get rate limit info
 2. **Workflow Interruption**: The `/status` command breaks the natural flow of conversation from the user's perspective (although the command and output don't pollute the context)
-3. **Not Available in VS Code Extension**: The `/status` command is not available when using the Codex VS Code extension
+3. **Not Available in VS Code Extension**: The `/status` command is not available when using the CODEX VS Code extension
 
 This utility provides a non-intrusive way to check your current token usage and rate limits by directly parsing the session files, without needing to start a new conversation or interrupt your workflow.
 
 ## Overview
 
-This tool searches through Claude Code session files (stored in `~/.codex/sessions/`) to find the most recent token usage statistics and rate limit information. It provides a clear summary of:
+This tool searches through CODEX session files (stored in `~/.codex/sessions/`) to find the most recent token usage statistics and rate limit information. It provides a clear summary of:
 
 - **Token Usage**: Total and last session input, cached, output, reasoning tokens
 - **Rate Limits**: 5-hour and weekly limits with usage percentages and reset times
@@ -38,6 +38,8 @@ python ratelimit_checker.py --live --interval 5
 
 ## Sample Output
 
+### CLI Mode
+
 ```
 Using default input folder: /Users/username/.codex/sessions
 Searching for latest token_count event...
@@ -46,6 +48,26 @@ total: input 5200, cached 2048, output 14, reasoning 0, subtotal 5214
 last:  input 5200, cached 2048, output 14, reasoning 0, subtotal 5214
 5h limit: used 0.0%, reset: 2025-09-27 12:26:21
 weekly limit: used 22.0%, reset: 2025-10-01 09:04:07
+```
+
+### Live TUI Mode
+
+```
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                  CODEX RATELIMIT - LIVE USAGE MONITOR                  │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ 5H SESSION   [██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  21.9%   │
+  │    Reset: 04:51:36                                                     │
+  │ 5H USAGE     [████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  28.0%   │
+  │    Used: 28.0%                                                         │
+  │ WEEK TIME    [█████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░]  47.6%   │
+  │    Reset: 10-01 17:04:14                                               │
+  │ WEEK USAGE   [███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  34.0%   │
+  │    Used: 34.0%                                                         │
+  ├────────────────────────────────────────────────────────────────────────┤
+  │ Last update: 2025-09-28 01:06:07                                       │
+  │ Refresh interval: 20s | Press 'q' to quit                              │
+  └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
@@ -71,43 +93,20 @@ Options:
 
 ## Live TUI Interface
 
-The `--live` option launches a real-time monitoring interface similar to `ccusage --live`, featuring:
+The `--live` option launches a real-time monitoring interface similar to `ccusage blocks --live`, featuring:
 
 - **4 Progress Bars**:
-  - 🕱️ **5H TIME**: Time elapsed in 5-hour window
-  - 🔥 **5H USAGE**: Usage percentage in 5-hour limit
-  - 📅 **WEEK TIME**: Time elapsed in weekly window
-  - 📊 **WEEK USAGE**: Usage percentage in weekly limit
-- **Auto-refresh**: Updates data at specified interval (default: 10 seconds)
+  - **5H TIME**: Time elapsed in 5-hour window
+  - **5H USAGE**: Usage percentage in 5-hour limit
+  - **WEEK TIME**: Time elapsed in weekly window
+  - **WEEK USAGE**: Usage percentage in weekly limit
 - **Reset Times**: Shows when limits reset (marks outdated limits)
-- **Quit**: Press 'q' to exit
+- **Auto-refresh**: Updates data at specified interval (default: 10 seconds)
 
-```
- ┌────────────────────────────────────────────────────────────────────┐
- │  CLAUDE CODE - LIVE TOKEN USAGE MONITOR                           │
- ├────────────────────────────────────────────────────────────────────┤
- │                                                                    │
- │ 🕱️ 5H TIME    [████████████████████████████████░░░░░░░░░]  68.2%    │
- │    Reset: 20:26:38                                                 │
- │                                                                    │
- │ 🔥 5H USAGE   [██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  10.0%    │
- │    Used: 10.0%                                                     │
- │                                                                    │
- │ 📅 WEEK TIME  [█████████████████████░░░░░░░░░░░░░░░░░░░]  43.9%    │
- │    Reset: 10-01 17:04:21                                           │
- │                                                                    │
- │ 📊 WEEK USAGE [████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  25.0%    │
- │    Used: 25.0%                                                     │
- │                                                                    │
- ├────────────────────────────────────────────────────────────────────┤
- │ Last update: 2025-09-27 11:21:47                                  │
- │ Refresh interval: 10s | Press 'q' to quit                         │
- └────────────────────────────────────────────────────────────────────┘
-```
 
 ## File Structure
 
-The utility expects Claude Code session files in this structure:
+The utility expects CODEX session files in this structure:
 ```
 ~/.codex/sessions/
 ├── 2025/
@@ -128,9 +127,6 @@ The utility expects Claude Code session files in this structure:
 3. Selects the most recent event based on timestamp
 4. Extracts and formats token usage and rate limit data
 
-## Testing
-
-Comprehensive test scenarios are available in the `test_scenarios/` directory. See [`test_scenarios/README.md`](test_scenarios/README.md) for detailed testing documentation and automated test runner.
 
 ## Requirements
 
@@ -197,4 +193,4 @@ The utility parses JSONL files where each line contains a JSON record. It specif
 
 ## License
 
-This tool is designed for personal use with Claude Code session data. Ensure compliance with Anthropic's terms of service when analyzing session data.
+This tool is designed for personal use with CODEX session data. Ensure compliance with Anthropic's terms of service when analyzing session data.
