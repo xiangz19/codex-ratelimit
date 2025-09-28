@@ -267,10 +267,45 @@ def get_rate_limit_data(base_path: Optional[Path] = None) -> Optional[Dict[str, 
     return data
 
 
-def draw_progress_bar(stdscr, y: int, x: int, bar_width: int, percent: float, label: str, details: str = "", total_width: int = 70) -> None:
+def draw_progress_bar(
+    stdscr,
+    y: int,
+    x: int,
+    bar_width: int,
+    percent: float,
+    label: str,
+    details: str = "",
+    total_width: int = 70,
+    outdated: bool = False,
+    is_usage: bool = False,
+    warning_threshold: int = 70,
+    colors_enabled: bool = False,
+) -> None:
     """Draw a progress bar at the specified position."""
-    filled_width = int((percent / 100.0) * bar_width)
-    bar = "█" * filled_width + "░" * (bar_width - filled_width)
+    color_attr = 0
+
+    if outdated:
+        bar = "-" * bar_width
+        percent_text = "  N/A"
+        color_pair = 0  # Default color
+    else:
+        filled_width = int((percent / 100.0) * bar_width)
+        bar = "█" * filled_width + "░" * (bar_width - filled_width)
+        percent_text = f"{percent:5.1f}%"
+
+        # Determine color based on usage threshold
+        if is_usage and percent >= warning_threshold:
+            color_pair = 2  # Dark red
+        elif is_usage:
+            color_pair = 1  # Green
+        else:
+            color_pair = 0  # Default color for time bars
+
+        if is_usage and colors_enabled and color_pair:
+            try:
+                color_attr = curses.color_pair(color_pair)
+            except curses.error:
+                color_attr = 0
 
     try:
         left_edge = x
@@ -280,7 +315,6 @@ def draw_progress_bar(stdscr, y: int, x: int, bar_width: int, percent: float, la
 
         # Prepare formatted pieces
         label_text = pad_label_to_width(label)
-        percent_text = f"{percent:5.1f}%"
         label_x = content_start + 1  # leave one-space margin after border
         bar_x = label_x + LABEL_AREA_WIDTH + 1  # space between label area and bar
         percent_x = right_edge - len(percent_text) - 3  # leave three spaces before border
@@ -297,7 +331,10 @@ def draw_progress_bar(stdscr, y: int, x: int, bar_width: int, percent: float, la
 
         # Draw bar at fixed column
         stdscr.addstr(y, bar_x, "[")
-        stdscr.addstr(y, bar_x + 1, bar)
+        if is_usage and not outdated and color_attr:
+            stdscr.addstr(y, bar_x + 1, bar, color_attr)
+        else:
+            stdscr.addstr(y, bar_x + 1, bar)
         stdscr.addstr(y, bar_x + 1 + bar_width, "]")
 
         # Ensure at least one space between bar and percentage
@@ -327,7 +364,7 @@ def draw_progress_bar(stdscr, y: int, x: int, bar_width: int, percent: float, la
 
 
 
-def run_tui(base_path: Optional[Path], refresh_interval: int) -> None:
+def run_tui(base_path: Optional[Path], refresh_interval: int, warning_threshold: int = 70) -> None:
     """Run the TUI interface."""
     def tui_main(stdscr):
         # Configure curses
@@ -335,6 +372,16 @@ def run_tui(base_path: Optional[Path], refresh_interval: int) -> None:
         stdscr.nodelay(True)  # Non-blocking input
         stdscr.timeout(100)  # 100ms timeout for getch()
         curses.use_default_colors()  # Use terminal's default colors
+
+        colors_enabled = False
+        if curses.has_colors():
+            try:
+                curses.start_color()
+                curses.init_pair(1, curses.COLOR_GREEN, -1)  # Green text on default background
+                curses.init_pair(2, curses.COLOR_RED, -1)    # Dark red text on default background
+                colors_enabled = True
+            except curses.error:
+                colors_enabled = False
 
         # Get terminal dimensions
         max_y, max_x = stdscr.getmaxyx()
@@ -388,32 +435,103 @@ def run_tui(base_path: Optional[Path], refresh_interval: int) -> None:
                         primary = data['primary']
 
                         # Session time bar
-                        reset_time_str = primary['reset_time'].astimezone().strftime('%H:%M:%S')
+                        reset_time_str = primary['reset_time'].astimezone().strftime('%m-%d %H:%M:%S')
                         outdated_str = " [OUTDATED]" if primary['outdated'] else ""
                         time_details = f"Reset: {reset_time_str}{outdated_str}"
-                        draw_progress_bar(stdscr, y_pos, 2, BAR_WIDTH, primary['time_percent'], "5H SESSION", time_details, total_width)
+                        draw_progress_bar(
+                            stdscr,
+                            y_pos,
+                            2,
+                            BAR_WIDTH,
+                            primary['time_percent'],
+                            "5H SESSION",
+                            time_details,
+                            total_width,
+                            outdated=primary['outdated'],
+                            is_usage=False,
+                            warning_threshold=warning_threshold,
+                            colors_enabled=colors_enabled,
+                        )
                         y_pos += 2
 
+                        # Border line after 5H SESSION
+                        try:
+                            stdscr.addstr(y_pos, 2, "├" + "─" * content_width + "┤")
+                        except curses.error:
+                            pass
+                        y_pos += 1
+
                         # Session usage bar
-                        usage_details = f"Used: {primary['used_percent']:.1f}%"
-                        draw_progress_bar(stdscr, y_pos, 2, BAR_WIDTH, primary['used_percent'], "5H USAGE", usage_details, total_width)
-                        y_pos += 2
+                        draw_progress_bar(
+                            stdscr,
+                            y_pos,
+                            2,
+                            BAR_WIDTH,
+                            primary['used_percent'],
+                            "5H USAGE",
+                            "",
+                            total_width,
+                            outdated=primary['outdated'],
+                            is_usage=True,
+                            warning_threshold=warning_threshold,
+                            colors_enabled=colors_enabled,
+                        )
+                        y_pos += 1
 
                     # Weekly bars
                     if 'secondary' in data:
+                        # Border line before WEEK TIME
+                        try:
+                            stdscr.addstr(y_pos, 2, "├" + "─" * content_width + "┤")
+                        except curses.error:
+                            pass
+                        y_pos += 1
+
                         secondary = data['secondary']
 
                         # Weekly time bar
                         reset_time_str = secondary['reset_time'].astimezone().strftime('%m-%d %H:%M:%S')
                         outdated_str = " [OUTDATED]" if secondary['outdated'] else ""
                         time_details = f"Reset: {reset_time_str}{outdated_str}"
-                        draw_progress_bar(stdscr, y_pos, 2, BAR_WIDTH, secondary['time_percent'], "WEEK TIME", time_details, total_width)
+                        draw_progress_bar(
+                            stdscr,
+                            y_pos,
+                            2,
+                            BAR_WIDTH,
+                            secondary['time_percent'],
+                            "WEEKLY TIME",
+                            time_details,
+                            total_width,
+                            outdated=secondary['outdated'],
+                            is_usage=False,
+                            warning_threshold=warning_threshold,
+                            colors_enabled=colors_enabled,
+                        )
                         y_pos += 2
 
+                        # Border line after WEEK TIME
+                        try:
+                            stdscr.addstr(y_pos, 2, "├" + "─" * content_width + "┤")
+                        except curses.error:
+                            pass
+                        y_pos += 1
+
                         # Weekly usage bar
-                        usage_details = f"Used: {secondary['used_percent']:.1f}%"
-                        draw_progress_bar(stdscr, y_pos, 2, BAR_WIDTH, secondary['used_percent'], "WEEK USAGE", usage_details, total_width)
-                        y_pos += 2
+                        draw_progress_bar(
+                            stdscr,
+                            y_pos,
+                            2,
+                            BAR_WIDTH,
+                            secondary['used_percent'],
+                            "WEEKLY USAGE",
+                            "",
+                            total_width,
+                            outdated=secondary['outdated'],
+                            is_usage=True,
+                            warning_threshold=warning_threshold,
+                            colors_enabled=colors_enabled,
+                        )
+                        y_pos += 1
 
                     # Footer info
                     try:
@@ -466,6 +584,8 @@ def main():
                        help='Launch TUI live monitoring interface')
     parser.add_argument('--interval', type=int, default=10,
                        help='Refresh interval in seconds for live mode (default: 10)')
+    parser.add_argument('--warning-threshold', type=int, default=70,
+                       help='Usage percentage threshold for warning color (default: 70)')
 
     args = parser.parse_args()
 
@@ -481,7 +601,7 @@ def main():
 
     # Launch TUI if --live flag is used
     if args.live:
-        run_tui(base_path, args.interval)
+        run_tui(base_path, args.interval, args.warning_threshold)
         return
 
     print("Searching for latest token_count event...")
