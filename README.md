@@ -14,7 +14,7 @@ This utility provides a non-intrusive way to check your current token usage and 
 
 This utility is inspired by [ccusage](https://github.com/ryoppippi/ccusage); at present ccusage only supports CODEX usage data and does not yet include rate limit information.
 
-For VS Code users who prefer having rate limit information directly in the status bar, check out the companion [codex-ratelimit-vscode](https://github.com/xiangz/codex-ratelimit-vscode) extension.
+For VS Code users who prefer having rate limit information directly in the status bar, check out the companion [codex-ratelimit-vscode](https://github.com/xiangz19/codex-ratelimit-vscode) extension.
 
 ## Overview
 
@@ -187,4 +187,4 @@ The utility parses JSONL files where each line contains a JSON record. It specif
 
 ## License
 
-This tool is designed for personal use with CODEX session data. Ensure compliance with Anthropic's terms of service when analyzing session data.
+MIT License
