@@ -14,6 +14,8 @@ This utility provides a non-intrusive way to check your current token usage and 
 
 This utility is inspired by [ccusage](https://github.com/ryoppippi/ccusage); at present ccusage only supports CODEX usage data and does not yet include rate limit information.
 
+For VS Code users who prefer having rate limit information directly in the status bar, check out the companion [codex-ratelimit-vscode](https://github.com/xiangz/codex-ratelimit-vscode) extension.
+
 ## Overview
 
 This tool searches through CODEX session files (stored in `~/.codex/sessions/`) to find the most recent token usage statistics and rate limit information. It provides a clear summary of:
@@ -57,25 +59,7 @@ weekly limit: used 22.0%, reset: 2025-10-01 09:04:07
 
 ### Live TUI Mode
 
-```
-  ┌────────────────────────────────────────────────────────────────────────┐
-  │                  CODEX RATELIMIT - LIVE USAGE MONITOR                  │
-  ├────────────────────────────────────────────────────────────────────────┤
-  │ 5H SESSION   [----------------------------------------------]    N/A   │
-  │    Reset: 09-28 04:51:36 [OUTDATED]                                    │
-  ├────────────────────────────────────────────────────────────────────────┤
-  │ 5H USAGE     [----------------------------------------------]    N/A   │
-  ├────────────────────────────────────────────────────────────────────────┤
-  │ WEEKLY TIME  [█████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░]  47.6%   │
-  │    Reset: 10-01 17:04:14                                               │
-  ├────────────────────────────────────────────────────────────────────────┤
-  │ WEEKLY USAGE [███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  34.0%   │
-  ├────────────────────────────────────────────────────────────────────────┤
-  │ Last update: 2025-09-28 12:22:07                                       │
-  │ Refresh interval: 60s | Press 'q' to quit                              │
-  └────────────────────────────────────────────────────────────────────────┘
-
-```
+![TUI Screenshot](TUI-screenshot.png)
 
 ## Features
 
