@@ -33,6 +33,9 @@ python ratelimit_checker.py
 # Use custom directory
 python ratelimit_checker.py --input-folder /path/to/sessions
 
+# Output in JSON format
+python ratelimit_checker.py --json
+
 # Launch live TUI monitoring interface
 python ratelimit_checker.py --live
 
@@ -45,7 +48,7 @@ python ratelimit_checker.py --live --warning-threshold 80
 
 ## Sample Output
 
-### CLI Mode
+### CLI Mode (Text Output)
 
 ```
 Using default input folder: /Users/username/.codex/sessions
@@ -55,6 +58,42 @@ total: input 5200, cached 2048, output 14, reasoning 0, subtotal 5214
 last:  input 5200, cached 2048, output 14, reasoning 0, subtotal 5214
 5h limit: used 0.0%, reset: 2025-09-27 12:26:21
 weekly limit: used 22.0%, reset: 2025-10-01 09:04:07
+```
+
+### CLI Mode (JSON Output)
+
+```bash
+python ratelimit_checker.py --json
+```
+
+```json
+{
+  "total": {
+    "input": 216034,
+    "cached": 186240,
+    "output": 14455,
+    "reasoning": 11392,
+    "subtotal": 230489
+  },
+  "last": {
+    "input": 13531,
+    "cached": 13440,
+    "output": 164,
+    "reasoning": 64,
+    "subtotal": 13695
+  },
+  "source_file": "/Users/username/.codex/sessions/2025/10/01/rollout-2025-10-01T10-30-15-abc123.jsonl",
+  "limit_5h": {
+    "used_percent": 5.0,
+    "reset_time": "2025-10-01 02:57:07",
+    "outdated": false
+  },
+  "limit_weekly": {
+    "used_percent": 45.0,
+    "reset_time": "2025-10-01 17:04:10",
+    "outdated": false
+  }
+}
 ```
 
 ### Live TUI Mode
@@ -78,6 +117,7 @@ python ratelimit_checker.py [OPTIONS]
 Options:
   -h, --help                    Show help message
   -i, --input-folder PATH       Custom input folder path (default: ~/.codex/sessions)
+  --json                        Output data in JSON format
   --live                        Launch TUI live monitoring interface
   --interval SECONDS            Refresh interval in seconds for live mode (default: 10)
   --warning-threshold PERCENT   Usage percentage threshold for warning color (default: 70)
