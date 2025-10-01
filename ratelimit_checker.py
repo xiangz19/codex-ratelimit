@@ -75,12 +75,13 @@ def get_session_base_path(custom_path: Optional[str] = None) -> Path:
     return Path.home() / ".codex" / "sessions"
 
 
-def find_latest_token_count_record(base_path: Optional[Path] = None) -> Optional[Tuple[Path, Dict[str, Any]]]:
+def find_latest_token_count_record(base_path: Optional[Path] = None, silent: bool = False) -> Optional[Tuple[Path, Dict[str, Any]]]:
     """
     Find the most recent token_count record by searching backwards from today.
 
     Args:
         base_path: Custom base path for session files
+        silent: If True, suppress error messages to stdout
 
     Returns:
         Tuple of (file_path, record) for the latest token_count event, or None if not found
@@ -108,7 +109,7 @@ def find_latest_token_count_record(base_path: Optional[Path] = None) -> Optional
 
             # Check each file for token_count events
             for file_path in files:
-                record = parse_session_file(Path(file_path))
+                record = parse_session_file(Path(file_path), silent=silent)
                 if record:
                     timestamp_str = record.get('timestamp')
                     if timestamp_str:
@@ -162,12 +163,13 @@ def validate_token_count_record(record: Dict[str, Any]) -> bool:
         return False
 
 
-def parse_session_file(file_path: Path) -> Optional[Dict[str, Any]]:
+def parse_session_file(file_path: Path, silent: bool = False) -> Optional[Dict[str, Any]]:
     """
     Parse the session file and find the latest token_count event.
 
     Args:
         file_path: Path to the session file
+        silent: If True, suppress error messages to stdout
 
     Returns:
         The latest token_count event data, or None if not found
@@ -201,7 +203,8 @@ def parse_session_file(file_path: Path) -> Optional[Dict[str, Any]]:
                     continue  # Skip malformed lines
 
     except Exception as e:
-        print(f"Error reading session file: {e}")
+        if not silent:
+            print(f"Error reading session file: {e}", file=sys.stderr)
         return None
 
     return latest_record
@@ -640,17 +643,19 @@ def main():
                        help='Refresh interval in seconds for live mode (default: 10)')
     parser.add_argument('--warning-threshold', type=int, default=70,
                        help='Usage percentage threshold for warning color (default: 70)')
+    parser.add_argument('--json', action='store_true',
+                       help='Output data in JSON format')
 
     args = parser.parse_args()
 
     # Set up base path
     if args.input_folder:
         base_path = Path(args.input_folder).expanduser()
-        if not args.live:
+        if not args.live and not args.json:
             print(f"Using custom input folder: {base_path}")
     else:
         base_path = get_session_base_path()
-        if not args.live:
+        if not args.live and not args.json:
             print(f"Using default input folder: {base_path}")
 
     # Launch TUI if --live flag is used
@@ -658,20 +663,28 @@ def main():
         run_tui(base_path, args.interval, args.warning_threshold)
         return
 
-    print("Searching for latest token_count event...")
+    if not args.json:
+        print("Searching for latest token_count event...")
 
     # Find the latest token_count record
-    result = find_latest_token_count_record(base_path)
+    result = find_latest_token_count_record(base_path, silent=args.json)
     if not result:
-        print("No token_count events found in session files.")
+        if args.json:
+            print(json.dumps({"error": "No token_count events found in session files"}))
+        else:
+            print("No token_count events found in session files.")
         return
 
     latest_file, record = result
-    print(f"Found latest token_count event in: {latest_file}")
+    if not args.json:
+        print(f"Found latest token_count event in: {latest_file}")
 
     # Validate record structure before processing
     if not validate_token_count_record(record):
-        print("Error: Found token_count event has invalid or missing required properties.")
+        if args.json:
+            print(json.dumps({"error": "Found token_count event has invalid or missing required properties"}))
+        else:
+            print("Error: Found token_count event has invalid or missing required properties.")
         return
 
     try:
@@ -682,45 +695,87 @@ def main():
 
         record_timestamp = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00'))
     except Exception as e:
-        print(f"Error processing token_count record: {e}")
+        if args.json:
+            print(json.dumps({"error": f"Error processing token_count record: {e}"}))
+        else:
+            print(f"Error processing token_count record: {e}")
         return
 
-    # Display token usage
+    # Prepare data for output
     try:
         total_usage = info['total_token_usage']
         last_usage = info['last_token_usage']
 
-        print(f"total: {format_token_usage(total_usage)}")
-        print(f"last:  {format_token_usage(last_usage)}")
-    except Exception as e:
-        print(f"Error displaying token usage: {e}")
+        output_data = {
+            "total": {
+                "input": total_usage.get('input_tokens', 0),
+                "cached": total_usage.get('cached_input_tokens', 0),
+                "output": total_usage.get('output_tokens', 0),
+                "reasoning": total_usage.get('reasoning_output_tokens', 0),
+                "subtotal": total_usage.get('total_tokens', 0)
+            },
+            "last": {
+                "input": last_usage.get('input_tokens', 0),
+                "cached": last_usage.get('cached_input_tokens', 0),
+                "output": last_usage.get('output_tokens', 0),
+                "reasoning": last_usage.get('reasoning_output_tokens', 0),
+                "subtotal": last_usage.get('total_tokens', 0)
+            }
+        }
 
-    # Display rate limits
-    try:
+        # Add source file path for JSON output
+        if args.json:
+            output_data["source_file"] = str(latest_file)
+
+        # Add rate limit information
         primary = rate_limits.get('primary', {})
         if primary:
             primary_percent = primary.get('used_percent', 0)
             primary_reset_seconds = primary.get('resets_in_seconds', 0)
             primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary_reset_seconds)
 
-            reset_time_str = primary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
-            outdated_str = " [OUTDATED]" if primary_outdated else ""
-            print(f"5h limit: used {primary_percent}%, reset: {reset_time_str}{outdated_str}")
-    except Exception as e:
-        print(f"Error displaying primary rate limit: {e}")
+            output_data["limit_5h"] = {
+                "used_percent": primary_percent,
+                "reset_time": primary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S'),
+                "outdated": primary_outdated
+            }
 
-    try:
         secondary = rate_limits.get('secondary', {})
         if secondary:
             secondary_percent = secondary.get('used_percent', 0)
             secondary_reset_seconds = secondary.get('resets_in_seconds', 0)
             secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary_reset_seconds)
 
-            reset_time_str = secondary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S')
-            outdated_str = " [OUTDATED]" if secondary_outdated else ""
-            print(f"weekly limit: used {secondary_percent}%, reset: {reset_time_str}{outdated_str}")
+            output_data["limit_weekly"] = {
+                "used_percent": secondary_percent,
+                "reset_time": secondary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S'),
+                "outdated": secondary_outdated
+            }
+
+        # Output in JSON or text format
+        if args.json:
+            print(json.dumps(output_data, indent=2))
+        else:
+            # Display token usage
+            print(f"total: {format_token_usage(total_usage)}")
+            print(f"last:  {format_token_usage(last_usage)}")
+
+            # Display rate limits
+            if 'limit_5h' in output_data:
+                limit_5h = output_data['limit_5h']
+                outdated_str = " [OUTDATED]" if limit_5h['outdated'] else ""
+                print(f"5h limit: used {limit_5h['used_percent']}%, reset: {limit_5h['reset_time']}{outdated_str}")
+
+            if 'limit_weekly' in output_data:
+                limit_weekly = output_data['limit_weekly']
+                outdated_str = " [OUTDATED]" if limit_weekly['outdated'] else ""
+                print(f"weekly limit: used {limit_weekly['used_percent']}%, reset: {limit_weekly['reset_time']}{outdated_str}")
+
     except Exception as e:
-        print(f"Error displaying secondary rate limit: {e}")
+        if args.json:
+            print(json.dumps({"error": f"Error processing data: {e}"}))
+        else:
+            print(f"Error processing data: {e}")
 
 
 if __name__ == "__main__":
