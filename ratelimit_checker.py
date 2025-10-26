@@ -221,22 +221,48 @@ def format_token_usage(usage_data: Dict[str, int]) -> str:
     return f"input {input_tokens}, cached {cached_tokens}, output {output_tokens}, reasoning {reasoning_tokens}, subtotal {total_tokens}"
 
 
-def calculate_reset_time(record_timestamp: datetime, reset_in_seconds: int) -> Tuple[datetime, bool]:
+def calculate_reset_time(rate_limit: Dict[str, Any], record_timestamp: datetime) -> Tuple[datetime, float, bool]:
     """
-    Calculate the actual reset time and check if it's outdated.
+    Normalize reset time information for a rate limit entry.
 
     Args:
-        record_timestamp: Timestamp of the record
-        reset_in_seconds: Seconds until reset from the record
+        rate_limit: Rate limit payload from the session record
+        record_timestamp: Timestamp of the record containing the rate limit
 
     Returns:
-        Tuple of (reset_time, is_outdated)
+        Tuple of (reset_time, seconds_until_reset, is_outdated)
     """
-    reset_time = record_timestamp + timedelta(seconds=reset_in_seconds)
-    current_time = datetime.now(record_timestamp.tzinfo)
-    is_outdated = reset_time < current_time
+    resets_at = rate_limit.get('resets_at')
+    resets_in_seconds = rate_limit.get('resets_in_seconds')
+    tzinfo = record_timestamp.tzinfo
 
-    return reset_time, is_outdated
+    reset_time: Optional[datetime] = None
+
+    if resets_at is not None:
+        try:
+            reset_time = datetime.fromtimestamp(float(resets_at), tz=tzinfo)
+        except (OSError, OverflowError, ValueError, TypeError):
+            reset_time = None
+
+    if reset_time is None and resets_in_seconds is not None:
+        try:
+            reset_time = record_timestamp + timedelta(seconds=float(resets_in_seconds))
+        except (OverflowError, TypeError, ValueError):
+            reset_time = None
+
+    current_time = datetime.now(tzinfo)
+
+    if reset_time is None:
+        # Fall back to record timestamp and mark the value as outdated.
+        reset_time = record_timestamp
+        seconds_until_reset = 0.0
+        is_outdated = True
+    else:
+        delta_seconds = (reset_time - current_time).total_seconds()
+        seconds_until_reset = max(0.0, delta_seconds)
+        is_outdated = reset_time <= current_time
+
+    return reset_time, seconds_until_reset, is_outdated
 
 
 def get_rate_limit_data(base_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
@@ -273,24 +299,31 @@ def get_rate_limit_data(base_path: Optional[Path] = None) -> Optional[Dict[str, 
     try:
         primary = rate_limits.get('primary', {})
         if primary:
-            primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary.get('resets_in_seconds', 0))
-            window_seconds = primary.get('window_minutes', 299) * 60
-            resets_in_seconds = primary.get('resets_in_seconds', 0)
+            primary_reset_time, primary_seconds_until_reset, primary_outdated = calculate_reset_time(primary, record_timestamp)
 
-            if primary_outdated:
-                # If outdated, assume 100% time elapsed
-                time_percent = 100.0
+            window_minutes_raw = primary.get('window_minutes', 299)
+            try:
+                window_minutes = float(window_minutes_raw)
+            except (TypeError, ValueError):
+                window_minutes = 0.0
+            window_seconds = max(0.0, window_minutes * 60)
+
+            if window_seconds > 0:
+                elapsed_seconds = window_seconds - primary_seconds_until_reset
+                elapsed_seconds = max(0.0, min(window_seconds, elapsed_seconds))
+                time_percent = (elapsed_seconds / window_seconds) * 100
             else:
-                # elapsed_seconds = total_window - remaining_seconds
-                elapsed_seconds = window_seconds - resets_in_seconds
-                time_percent = (elapsed_seconds / window_seconds) * 100 if window_seconds > 0 else 0
+                time_percent = 0.0
 
             data['primary'] = {
                 'used_percent': primary.get('used_percent', 0),
-                'time_percent': max(0, min(100, time_percent)),
+                'time_percent': max(0.0, min(100.0, time_percent)),
                 'reset_time': primary_reset_time,
+                'seconds_until_reset': primary_seconds_until_reset,
                 'outdated': primary_outdated,
-                'window_minutes': primary.get('window_minutes', 299)
+                'window_minutes': window_minutes_raw,
+                'resets_at': primary.get('resets_at'),
+                'resets_in_seconds': primary.get('resets_in_seconds'),
             }
     except Exception as e:
         print(f"Error processing primary rate limit data: {e}")
@@ -299,24 +332,31 @@ def get_rate_limit_data(base_path: Optional[Path] = None) -> Optional[Dict[str, 
     try:
         secondary = rate_limits.get('secondary', {})
         if secondary:
-            secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary.get('resets_in_seconds', 0))
-            window_seconds = secondary.get('window_minutes', 10079) * 60
-            resets_in_seconds = secondary.get('resets_in_seconds', 0)
+            secondary_reset_time, secondary_seconds_until_reset, secondary_outdated = calculate_reset_time(secondary, record_timestamp)
 
-            if secondary_outdated:
-                # If outdated, assume 100% time elapsed
-                time_percent = 100.0
+            window_minutes_raw = secondary.get('window_minutes', 10079)
+            try:
+                window_minutes = float(window_minutes_raw)
+            except (TypeError, ValueError):
+                window_minutes = 0.0
+            window_seconds = max(0.0, window_minutes * 60)
+
+            if window_seconds > 0:
+                elapsed_seconds = window_seconds - secondary_seconds_until_reset
+                elapsed_seconds = max(0.0, min(window_seconds, elapsed_seconds))
+                time_percent = (elapsed_seconds / window_seconds) * 100
             else:
-                # elapsed_seconds = total_window - remaining_seconds
-                elapsed_seconds = window_seconds - resets_in_seconds
-                time_percent = (elapsed_seconds / window_seconds) * 100 if window_seconds > 0 else 0
+                time_percent = 0.0
 
             data['secondary'] = {
                 'used_percent': secondary.get('used_percent', 0),
-                'time_percent': max(0, min(100, time_percent)),
+                'time_percent': max(0.0, min(100.0, time_percent)),
                 'reset_time': secondary_reset_time,
+                'seconds_until_reset': secondary_seconds_until_reset,
                 'outdated': secondary_outdated,
-                'window_minutes': secondary.get('window_minutes', 10079)
+                'window_minutes': window_minutes_raw,
+                'resets_at': secondary.get('resets_at'),
+                'resets_in_seconds': secondary.get('resets_in_seconds'),
             }
     except Exception as e:
         print(f"Error processing secondary rate limit data: {e}")
@@ -731,25 +771,29 @@ def main():
         primary = rate_limits.get('primary', {})
         if primary:
             primary_percent = primary.get('used_percent', 0)
-            primary_reset_seconds = primary.get('resets_in_seconds', 0)
-            primary_reset_time, primary_outdated = calculate_reset_time(record_timestamp, primary_reset_seconds)
+            primary_reset_time, primary_seconds_until_reset, primary_outdated = calculate_reset_time(primary, record_timestamp)
 
             output_data["limit_5h"] = {
                 "used_percent": primary_percent,
                 "reset_time": primary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S'),
-                "outdated": primary_outdated
+                "seconds_until_reset": int(round(primary_seconds_until_reset)),
+                "outdated": primary_outdated,
+                "resets_at": primary.get('resets_at'),
+                "resets_in_seconds": primary.get('resets_in_seconds'),
             }
 
         secondary = rate_limits.get('secondary', {})
         if secondary:
             secondary_percent = secondary.get('used_percent', 0)
-            secondary_reset_seconds = secondary.get('resets_in_seconds', 0)
-            secondary_reset_time, secondary_outdated = calculate_reset_time(record_timestamp, secondary_reset_seconds)
+            secondary_reset_time, secondary_seconds_until_reset, secondary_outdated = calculate_reset_time(secondary, record_timestamp)
 
             output_data["limit_weekly"] = {
                 "used_percent": secondary_percent,
                 "reset_time": secondary_reset_time.astimezone().strftime('%Y-%m-%d %H:%M:%S'),
-                "outdated": secondary_outdated
+                "seconds_until_reset": int(round(secondary_seconds_until_reset)),
+                "outdated": secondary_outdated,
+                "resets_at": secondary.get('resets_at'),
+                "resets_in_seconds": secondary.get('resets_in_seconds'),
             }
 
         # Output in JSON or text format
