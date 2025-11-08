@@ -75,9 +75,47 @@ def get_session_base_path(custom_path: Optional[str] = None) -> Path:
     return Path.home() / ".codex" / "sessions"
 
 
+def get_session_files_with_mtime(base_path: Path, days_back: int = 7) -> list:
+    """
+    Collect all session files from the last N days with their modification times.
+
+    Args:
+        base_path: Base path for session files
+        days_back: Number of days to search backwards
+
+    Returns:
+        List of tuples (file_path, mtime) sorted by modification time descending
+    """
+    current_date = datetime.now()
+    files_with_mtime = []
+
+    for days in range(days_back):
+        search_date = current_date - timedelta(days=days)
+        date_path = base_path / str(search_date.year) / f"{search_date.month:02d}" / f"{search_date.day:02d}"
+
+        if date_path.exists():
+            pattern = str(date_path / "rollout-*.jsonl")
+            files = glob.glob(pattern)
+
+            for file_path in files:
+                try:
+                    file_obj = Path(file_path)
+                    mtime = file_obj.stat().st_mtime
+                    files_with_mtime.append((file_obj, mtime))
+                except (OSError, IOError):
+                    continue  # Skip files we can't stat
+
+    # Sort by modification time, most recent first
+    files_with_mtime.sort(key=lambda x: x[1], reverse=True)
+    return files_with_mtime
+
+
 def find_latest_token_count_record(base_path: Optional[Path] = None, silent: bool = False) -> Optional[Tuple[Path, Dict[str, Any]]]:
     """
-    Find the most recent token_count record by searching backwards from today.
+    Find the most recent token_count record using a two-phase search strategy.
+
+    Phase 1 (Fast Path): Check today's directory for recently modified files (within 1 hour)
+    Phase 2 (Comprehensive): Search all files from last 7 days, sorted by modification time
 
     Args:
         base_path: Custom base path for session files
@@ -87,42 +125,42 @@ def find_latest_token_count_record(base_path: Optional[Path] = None, silent: boo
         Tuple of (file_path, record) for the latest token_count event, or None if not found
 
     Note:
-        Searches backwards for up to 7 days from the current date.
+        Uses file modification time to prioritize actively-used sessions,
+        even if they're located in past date directories.
     """
     if base_path is None:
         base_path = get_session_base_path()
-    current_date = datetime.now()
 
-    latest_record = None
-    latest_timestamp = None
-    latest_file = None
+    current_time = datetime.now()
+    one_hour_ago = current_time.timestamp() - 3600
 
-    # Search backwards for up to 7 days
-    for days_back in range(7):
-        search_date = current_date - timedelta(days=days_back)
-        date_path = base_path / str(search_date.year) / f"{search_date.month:02d}" / f"{search_date.day:02d}"
+    # Phase 1: Fast path - check today's directory for recently modified files
+    today_date_path = base_path / str(current_time.year) / f"{current_time.month:02d}" / f"{current_time.day:02d}"
 
-        if date_path.exists():
-            # Find all rollout-*.jsonl files in this directory
-            pattern = str(date_path / "rollout-*.jsonl")
-            files = glob.glob(pattern)
+    if today_date_path.exists():
+        pattern = str(today_date_path / "rollout-*.jsonl")
+        today_files = glob.glob(pattern)
 
-            # Check each file for token_count events
-            for file_path in files:
-                record = parse_session_file(Path(file_path), silent=silent)
-                if record:
-                    timestamp_str = record.get('timestamp')
-                    if timestamp_str:
-                        timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        for file_path in today_files:
+            try:
+                file_obj = Path(file_path)
+                mtime = file_obj.stat().st_mtime
 
-                        if latest_timestamp is None or timestamp > latest_timestamp:
-                            latest_timestamp = timestamp
-                            latest_record = record
-                            latest_file = Path(file_path)
+                # If file was modified within the last hour, check it first
+                if mtime > one_hour_ago:
+                    record = parse_session_file(file_obj, silent=silent)
+                    if record:
+                        return file_obj, record
+            except (OSError, IOError):
+                continue  # Skip files we can't stat
 
-            # If we found records on this day, return the latest one
-            if latest_record is not None:
-                return latest_file, latest_record
+    # Phase 2: Comprehensive search - check all files sorted by modification time
+    files_with_mtime = get_session_files_with_mtime(base_path, days_back=7)
+
+    for file_path, mtime in files_with_mtime:
+        record = parse_session_file(file_path, silent=silent)
+        if record:
+            return file_path, record
 
     return None
 
