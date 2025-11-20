@@ -141,18 +141,27 @@ def find_latest_token_count_record(base_path: Optional[Path] = None, silent: boo
         pattern = str(today_date_path / "rollout-*.jsonl")
         today_files = glob.glob(pattern)
 
+        # Collect files modified in the last hour with their mtimes
+        recent_files = []
         for file_path in today_files:
             try:
                 file_obj = Path(file_path)
                 mtime = file_obj.stat().st_mtime
 
-                # If file was modified within the last hour, check it first
+                # If file was modified within the last hour, add to candidates
                 if mtime > one_hour_ago:
-                    record = parse_session_file(file_obj, silent=silent)
-                    if record:
-                        return file_obj, record
+                    recent_files.append((file_obj, mtime))
             except (OSError, IOError):
                 continue  # Skip files we can't stat
+
+        # Sort by modification time, most recent first
+        recent_files.sort(key=lambda x: x[1], reverse=True)
+
+        # Check files in order of most recent modification
+        for file_obj, mtime in recent_files:
+            record = parse_session_file(file_obj, silent=silent)
+            if record:
+                return file_obj, record
 
     # Phase 2: Comprehensive search - check all files sorted by modification time
     files_with_mtime = get_session_files_with_mtime(base_path, days_back=7)
